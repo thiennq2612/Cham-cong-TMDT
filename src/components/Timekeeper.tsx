@@ -21,6 +21,10 @@ export default function Timekeeper({
 
   // Submission loading state to block double clicks
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Lunch / Afternoon Break states
+  const [lunchBreak, setLunchBreak] = useState(false);
+  const [afternoonBreak, setAfternoonBreak] = useState(false);
   
   // Modal for new CTV
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -88,6 +92,40 @@ export default function Timekeeper({
       clearSignature();
     }
   }, [selectedNames, logs]);
+
+  // Default break deduction rules based on shift start and end times
+  useEffect(() => {
+    if (checkInTime) {
+      const checkInHour = new Date(checkInTime).getHours();
+      
+      let lunch = false;
+      let afternoon = false;
+
+      // Start <= 12:00: default tick lunch break
+      if (checkInHour <= 12) {
+        lunch = true;
+      } 
+      // Start >= 13:00: default tick afternoon break
+      else if (checkInHour >= 13) {
+        afternoon = true;
+      }
+
+      // Finish >= 18:00: default tick both
+      if (checkOutTime) {
+        const checkOutHour = new Date(checkOutTime).getHours();
+        if (checkOutHour >= 18) {
+          lunch = true;
+          afternoon = true;
+        }
+      }
+
+      setLunchBreak(lunch);
+      setAfternoonBreak(afternoon);
+    } else {
+      setLunchBreak(false);
+      setAfternoonBreak(false);
+    }
+  }, [checkInTime, checkOutTime]);
 
   // Initial setup of signature canvas resizing
   useEffect(() => {
@@ -173,6 +211,10 @@ export default function Timekeeper({
         const selectedCollab = collaborators.find(c => c.name === name);
         const resolvedRate = selectedCollab?.hourlyRate ?? 42000;
 
+        const checkInHour = new Date(now).getHours();
+        const defaultLunch = checkInHour <= 12;
+        const defaultAfternoon = checkInHour >= 13;
+
         // Create log record in Firestore immediately
         await addTimeLog({
           name,
@@ -180,7 +222,9 @@ export default function Timekeeper({
           checkInTime: now,
           checkOutTime: 0,
           signature: '',
-          hourlyRate: resolvedRate
+          hourlyRate: resolvedRate,
+          lunchBreak: defaultLunch,
+          afternoonBreak: defaultAfternoon
         });
       }
       
@@ -283,10 +327,12 @@ export default function Timekeeper({
         const activeLog = logs.find(log => log.name === name && (!log.checkOutTime || log.checkOutTime === 0));
         
         if (activeLog && activeLog.id) {
-          // Update the existing document with checkOutTime and signature
+          // Update the existing document with checkOutTime, signature and breaks
           await updateTimeLog(activeLog.id, {
             checkOutTime,
-            signature: signatureData
+            signature: signatureData,
+            lunchBreak,
+            afternoonBreak
           });
         } else {
           // Fallback if no active log found (e.g. manual adjustments)
@@ -298,7 +344,9 @@ export default function Timekeeper({
             checkInTime,
             checkOutTime,
             signature: signatureData,
-            hourlyRate: resolvedRate
+            hourlyRate: resolvedRate,
+            lunchBreak,
+            afternoonBreak
           });
         }
         localStorage.removeItem(`active_session_${name}`);
@@ -467,6 +515,33 @@ export default function Timekeeper({
             Ra ca (Check-out)
           </button>
         </div>
+
+        {/* Break deductions checkboxes */}
+        {checkInTime && checkOutTime && (
+          <div className="signature-section" style={{ marginBottom: '20px' }}>
+            <label className="form-label">Khấu trừ thời gian nghỉ</label>
+            <div style={{ display: 'flex', gap: '20px', background: 'var(--bg-dark-secondary)', border: '1px solid var(--border-color)', borderRadius: 'var(--border-radius-md)', padding: '12px 16px' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.85rem', color: 'var(--text-primary)' }}>
+                <input
+                  type="checkbox"
+                  checked={lunchBreak}
+                  onChange={(e) => setLunchBreak(e.target.checked)}
+                  style={{ width: '18px', height: '18px', cursor: 'pointer' }}
+                />
+                Nghỉ trưa (Trừ 1.5h)
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.85rem', color: 'var(--text-primary)' }}>
+                <input
+                  type="checkbox"
+                  checked={afternoonBreak}
+                  onChange={(e) => setAfternoonBreak(e.target.checked)}
+                  style={{ width: '18px', height: '18px', cursor: 'pointer' }}
+                />
+                Nghỉ chiều (Trừ 0.5h)
+              </label>
+            </div>
+          </div>
+        )}
 
         {/* Signature Capture Canvas or Manager override */}
         {selectedNames.length > 1 ? (

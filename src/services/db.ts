@@ -46,6 +46,8 @@ export interface TimeLog {
   checkOutTime: number; // Timestamp (ms)
   signature: string; // Base64 Image URL
   hourlyRate: number;
+  lunchBreak?: boolean;
+  afternoonBreak?: boolean;
 }
 
 export async function initDefaultCollaborators(): Promise<void> {
@@ -102,7 +104,9 @@ export async function getTimeLogs(): Promise<TimeLog[]> {
         checkInTime: data.checkInTime,
         checkOutTime: data.checkOutTime,
         signature: data.signature,
-        hourlyRate: data.hourlyRate ?? 42000
+        hourlyRate: data.hourlyRate ?? 42000,
+        lunchBreak: data.lunchBreak ?? false,
+        afternoonBreak: data.afternoonBreak ?? false
       });
     });
     return logs;
@@ -138,7 +142,9 @@ export function subscribeTimeLogs(callback: (logs: TimeLog[]) => void) {
         checkInTime: data.checkInTime,
         checkOutTime: data.checkOutTime,
         signature: data.signature,
-        hourlyRate: data.hourlyRate ?? 42000
+        hourlyRate: data.hourlyRate ?? 42000,
+        lunchBreak: data.lunchBreak ?? false,
+        afternoonBreak: data.afternoonBreak ?? false
       });
     });
     callback(logs);

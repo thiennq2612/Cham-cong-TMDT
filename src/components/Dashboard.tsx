@@ -38,6 +38,8 @@ export default function Dashboard({
   const [manualDate, setManualDate] = useState('');
   const [manualCheckInTime, setManualCheckInTime] = useState('08:00');
   const [manualCheckOutTime, setManualCheckOutTime] = useState('17:00');
+  const [manualLunchBreak, setManualLunchBreak] = useState(false);
+  const [manualAfternoonBreak, setManualAfternoonBreak] = useState(false);
   
   // Selected signature for zoom modal
   const [zoomedSignature, setZoomedSignature] = useState<string | null>(null);
@@ -68,6 +70,37 @@ export default function Dashboard({
       document.removeEventListener('mousedown', handleClickOutside);
     };
   }, []);
+
+  // Default break logic for manual admin timekeeping adjustment form
+  useEffect(() => {
+    if (manualCheckInTime) {
+      const hour = parseInt(manualCheckInTime.split(':')[0], 10);
+      
+      let lunch = false;
+      let afternoon = false;
+
+      // Start <= 12:00: default tick lunch break
+      if (hour <= 12) {
+        lunch = true;
+      } 
+      // Start >= 13:00: default tick afternoon break
+      else if (hour >= 13) {
+        afternoon = true;
+      }
+
+      // Finish >= 18:00: default tick both
+      if (manualCheckOutTime) {
+        const outHour = parseInt(manualCheckOutTime.split(':')[0], 10);
+        if (outHour >= 18) {
+          lunch = true;
+          afternoon = true;
+        }
+      }
+
+      setManualLunchBreak(lunch);
+      setManualAfternoonBreak(afternoon);
+    }
+  }, [manualCheckInTime, manualCheckOutTime]);
 
   // Filter collaborators list for dropdown selection
   const filteredFilterCollabs = collaborators.filter((collab) =>
@@ -217,7 +250,9 @@ export default function Dashboard({
       checkInTime: checkInDateTime.getTime(),
       checkOutTime: checkOutDateTime.getTime(),
       signature: stampSVG,
-      hourlyRate: resolvedRate
+      hourlyRate: resolvedRate,
+      lunchBreak: manualLunchBreak,
+      afternoonBreak: manualAfternoonBreak
     };
 
     try {
@@ -522,6 +557,28 @@ export default function Dashboard({
               required
             />
           </div>
+        </div>
+
+        {/* Break deductions checkboxes */}
+        <div style={{ display: 'flex', gap: '20px', marginTop: '12px', marginBottom: '12px', paddingLeft: '4px' }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.8rem', color: 'var(--text-primary)' }}>
+            <input
+              type="checkbox"
+              checked={manualLunchBreak}
+              onChange={(e) => setManualLunchBreak(e.target.checked)}
+              style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+            />
+            Khấu trừ Nghỉ trưa (Trừ 1.5h)
+          </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.8rem', color: 'var(--text-primary)' }}>
+            <input
+              type="checkbox"
+              checked={manualAfternoonBreak}
+              onChange={(e) => setManualAfternoonBreak(e.target.checked)}
+              style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+            />
+            Khấu trừ Nghỉ chiều (Trừ 0.5h)
+          </label>
         </div>
 
         <div className="date-filters" style={{ marginTop: '10px' }}>
