@@ -114,7 +114,7 @@ export default function Dashboard({
   };
 
   // Delete Log handler
-  const handleDeleteLog = async (id: number) => {
+  const handleDeleteLog = async (id: string) => {
     if (window.confirm('Bạn có chắc chắn muốn xóa bản ghi chấm công này?')) {
       try {
         await deleteTimeLog(id);
@@ -136,7 +136,7 @@ export default function Dashboard({
   };
 
   // Delete Collaborator handler
-  const handleDeleteCollaborator = async (id: number, name: string) => {
+  const handleDeleteCollaborator = async (id: string, name: string) => {
     if (window.confirm(`Bạn có chắc chắn muốn xóa nhân sự "${name}" khỏi hệ thống?`)) {
       try {
         await deleteCollaborator(id);

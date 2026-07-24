@@ -1,50 +1,49 @@
-const DB_NAME = 'CTVTimekeepingDB';
-const DB_VERSION = 1;
-const STORE_COLLABORATORS = 'collaborators';
-const STORE_LOGS = 'logs';
+import { initializeApp } from 'firebase/app';
+import { 
+  getFirestore, 
+  collection, 
+  getDocs, 
+  addDoc, 
+  deleteDoc, 
+  doc, 
+  query, 
+  orderBy 
+} from 'firebase/firestore';
+
+// ==========================================
+// CẤU HÌNH FIREBASE CỦA BẠN (CẦN THAY THẾ)
+// ==========================================
+// Hãy dán cụm thông tin cấu hình Firebase Web App của bạn vào đây:
+const firebaseConfig = {
+  apiKey: "AIzaSyBO_4bXSfuwdjLs7RI-sYWdLyy49vctPVE",
+  authDomain: "fahasa-tmdt.firebaseapp.com",
+  projectId: "fahasa-tmdt",
+  storageBucket: "fahasa-tmdt.firebasestorage.app",
+  messagingSenderId: "882925197789",
+  appId: "1:882925197789:web:d99723e1a7bde185a2fe34",
+  measurementId: "G-J2ZB935SNK"
+};
+
+const app = initializeApp(firebaseConfig);
+const firestore = getFirestore(app);
+
+const COLLAB_COLLECTION = 'collaborators';
+const LOGS_COLLECTION = 'logs';
 
 export interface Collaborator {
-  id?: number;
+  id?: string;
   name: string;
   hourlyRate: number;
 }
 
 export interface TimeLog {
-  id?: number;
+  id?: string;
   name: string;
   date: string; // YYYY-MM-DD
   checkInTime: number; // Timestamp (ms)
   checkOutTime: number; // Timestamp (ms)
   signature: string; // Base64 Image URL
   hourlyRate: number;
-}
-
-function openDB(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, DB_VERSION);
-
-    request.onerror = () => {
-      reject(new Error('Failed to open database'));
-    };
-
-    request.onsuccess = () => {
-      resolve(request.result);
-    };
-
-    request.onupgradeneeded = () => {
-      const db = request.result;
-      
-      // Create collaborators store
-      if (!db.objectStoreNames.contains(STORE_COLLABORATORS)) {
-        db.createObjectStore(STORE_COLLABORATORS, { keyPath: 'id', autoIncrement: true });
-      }
-
-      // Create logs store
-      if (!db.objectStoreNames.contains(STORE_LOGS)) {
-        db.createObjectStore(STORE_LOGS, { keyPath: 'id', autoIncrement: true });
-      }
-    };
-  });
 }
 
 export async function initDefaultCollaborators(): Promise<void> {
@@ -57,105 +56,65 @@ export async function initDefaultCollaborators(): Promise<void> {
 }
 
 export async function getCollaborators(): Promise<Collaborator[]> {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const transaction = db.transaction(STORE_COLLABORATORS, 'readonly');
-    const store = transaction.objectStore(STORE_COLLABORATORS);
-    const request = store.getAll();
-
-    request.onsuccess = () => {
-      resolve(request.result);
-    };
-
-    request.onerror = () => {
-      reject(new Error('Failed to retrieve collaborators'));
-    };
-  });
+  try {
+    const querySnapshot = await getDocs(collection(firestore, COLLAB_COLLECTION));
+    const collabs: Collaborator[] = [];
+    querySnapshot.forEach((doc) => {
+      const data = doc.data();
+      collabs.push({
+        id: doc.id,
+        name: data.name,
+        hourlyRate: data.hourlyRate ?? 42000
+      });
+    });
+    return collabs;
+  } catch (err) {
+    console.error('Error fetching collaborators: ', err);
+    return [];
+  }
 }
 
-export async function addCollaborator(name: string, hourlyRate: number = 42000): Promise<number> {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const transaction = db.transaction(STORE_COLLABORATORS, 'readwrite');
-    const store = transaction.objectStore(STORE_COLLABORATORS);
-    const request = store.add({ name, hourlyRate });
-
-    request.onsuccess = () => {
-      resolve(request.result as number);
-    };
-
-    request.onerror = () => {
-      reject(new Error('Failed to add collaborator'));
-    };
+export async function addCollaborator(name: string, hourlyRate: number = 42000): Promise<string> {
+  const docRef = await addDoc(collection(firestore, COLLAB_COLLECTION), {
+    name,
+    hourlyRate
   });
+  return docRef.id;
 }
 
-export async function deleteCollaborator(id: number): Promise<void> {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const transaction = db.transaction(STORE_COLLABORATORS, 'readwrite');
-    const store = transaction.objectStore(STORE_COLLABORATORS);
-    const request = store.delete(id);
-
-    request.onsuccess = () => {
-      resolve();
-    };
-
-    request.onerror = () => {
-      reject(new Error('Failed to delete collaborator'));
-    };
-  });
+export async function deleteCollaborator(id: string): Promise<void> {
+  await deleteDoc(doc(firestore, COLLAB_COLLECTION, id));
 }
 
 export async function getTimeLogs(): Promise<TimeLog[]> {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const transaction = db.transaction(STORE_LOGS, 'readonly');
-    const store = transaction.objectStore(STORE_LOGS);
-    const request = store.getAll();
-
-    request.onsuccess = () => {
-      // Sort logs by checkInTime descending (newest first)
-      const sorted = (request.result as TimeLog[]).sort((a, b) => b.checkInTime - a.checkInTime);
-      resolve(sorted);
-    };
-
-    request.onerror = () => {
-      reject(new Error('Failed to retrieve time logs'));
-    };
-  });
+  try {
+    const q = query(collection(firestore, LOGS_COLLECTION), orderBy('checkInTime', 'desc'));
+    const querySnapshot = await getDocs(q);
+    const logs: TimeLog[] = [];
+    querySnapshot.forEach((doc) => {
+      const data = doc.data();
+      logs.push({
+        id: doc.id,
+        name: data.name,
+        date: data.date,
+        checkInTime: data.checkInTime,
+        checkOutTime: data.checkOutTime,
+        signature: data.signature,
+        hourlyRate: data.hourlyRate ?? 42000
+      });
+    });
+    return logs;
+  } catch (err) {
+    console.error('Error fetching time logs: ', err);
+    return [];
+  }
 }
 
-export async function addTimeLog(log: Omit<TimeLog, 'id'>): Promise<number> {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const transaction = db.transaction(STORE_LOGS, 'readwrite');
-    const store = transaction.objectStore(STORE_LOGS);
-    const request = store.add(log);
-
-    request.onsuccess = () => {
-      resolve(request.result as number);
-    };
-
-    request.onerror = () => {
-      reject(new Error('Failed to add time log'));
-    };
-  });
+export async function addTimeLog(log: Omit<TimeLog, 'id'>): Promise<string> {
+  const docRef = await addDoc(collection(firestore, LOGS_COLLECTION), log);
+  return docRef.id;
 }
 
-export async function deleteTimeLog(id: number): Promise<void> {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const transaction = db.transaction(STORE_LOGS, 'readwrite');
-    const store = transaction.objectStore(STORE_LOGS);
-    const request = store.delete(id);
-
-    request.onsuccess = () => {
-      resolve();
-    };
-
-    request.onerror = () => {
-      reject(new Error('Failed to delete time log'));
-    };
-  });
+export async function deleteTimeLog(id: string): Promise<void> {
+  await deleteDoc(doc(firestore, LOGS_COLLECTION, id));
 }
