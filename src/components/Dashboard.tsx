@@ -307,7 +307,7 @@ export default function Dashboard({
           </span>
         </h3>
         
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: '10px', maxHeight: '180px', overflowY: 'auto', paddingRight: '4px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(145px, 1fr))', gap: '10px', maxHeight: '260px', overflowY: 'auto', paddingRight: '4px' }}>
           {todayAttendance.map((item) => {
             let badgeBg = 'rgba(239, 68, 68, 0.08)';
             let badgeColor = '#ef4444';
@@ -331,9 +331,11 @@ export default function Dashboard({
                 padding: '8px 12px',
                 display: 'flex',
                 flexDirection: 'column',
-                gap: '4px'
+                justifyContent: 'space-between',
+                gap: '8px',
+                minHeight: '76px'
               }}>
-                <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={item.name}>
+                <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-primary)', wordBreak: 'break-word', lineHeight: '1.25' }} title={item.name}>
                   {item.name}
                 </span>
                 <span style={{
