@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { deleteTimeLog, deleteCollaborator } from '../services/db';
+import { deleteTimeLog, deleteCollaborator, addTimeLog } from '../services/db';
 import type { TimeLog, Collaborator } from '../services/db';
 import { Search, Download, Trash2, Calendar, FileSpreadsheet, X, Clock, DollarSign, Users } from 'lucide-react';
 import * as XLSX from 'xlsx';
@@ -24,6 +24,12 @@ export default function Dashboard({
   
   // Collaborators search state
   const [collabSearch, setCollabSearch] = useState('');
+
+  // Manual timekeeping adjustment form states
+  const [manualCollabName, setManualCollabName] = useState('');
+  const [manualDate, setManualDate] = useState('');
+  const [manualCheckInTime, setManualCheckInTime] = useState('08:00');
+  const [manualCheckOutTime, setManualCheckOutTime] = useState('17:00');
   
   // Selected signature for zoom modal
   const [zoomedSignature, setZoomedSignature] = useState<string | null>(null);
@@ -146,6 +152,57 @@ export default function Dashboard({
     collab.name.toLowerCase().includes(collabSearch.toLowerCase())
   );
 
+  // Manual log saving logic
+  const handleSaveManualLog = async () => {
+    if (!manualCollabName || !manualDate || !manualCheckInTime || !manualCheckOutTime) {
+      alert('Vui lòng điền đầy đủ thông tin!');
+      return;
+    }
+
+    const checkInDateTime = new Date(`${manualDate}T${manualCheckInTime}`);
+    const checkOutDateTime = new Date(`${manualDate}T${manualCheckOutTime}`);
+
+    if (isNaN(checkInDateTime.getTime()) || isNaN(checkOutDateTime.getTime())) {
+      alert('Thời gian nhập vào không hợp lệ!');
+      return;
+    }
+
+    if (checkOutDateTime.getTime() <= checkInDateTime.getTime()) {
+      alert('Thời gian ra phải sau thời gian vào!');
+      return;
+    }
+
+    const selectedCollab = collaborators.find(c => c.name === manualCollabName);
+    const resolvedRate = selectedCollab?.hourlyRate ?? 42000;
+
+    // SVG stamp
+    const stampSVG = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="150" height="50" viewBox="0 0 150 50"><rect width="100%" height="100%" fill="%23f59e0b" rx="5"/><text x="50%" y="60%" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="12" font-weight="bold" fill="white">QUẢN LÝ BỔ SUNG</text></svg>`;
+
+    const logData = {
+      name: manualCollabName,
+      date: manualDate,
+      checkInTime: checkInDateTime.getTime(),
+      checkOutTime: checkOutDateTime.getTime(),
+      signature: stampSVG,
+      hourlyRate: resolvedRate
+    };
+
+    try {
+      await addTimeLog(logData);
+      onLogDeleted(); // refresh parent logs state
+      
+      // reset
+      setManualCollabName('');
+      setManualDate('');
+      setManualCheckInTime('08:00');
+      setManualCheckOutTime('17:00');
+      
+      alert(`Đã thêm bổ sung chấm công cho ${manualCollabName} thành công!`);
+    } catch (err) {
+      alert('Thêm chấm công bổ sung thất bại!');
+    }
+  };
+
   return (
     <>
       {/* Metrics Section */}
@@ -201,6 +258,70 @@ export default function Dashboard({
               value={endDate}
               onChange={(e) => setEndDate(e.target.value)}
             />
+          </div>
+        </div>
+      </div>
+
+      {/* Manual timekeeping adjustment card */}
+      <div className="panel-card filter-card" style={{ marginTop: '20px' }}>
+        <h3 className="panel-title" style={{ marginBottom: '8px', fontSize: '0.95rem' }}>
+          <Calendar size={16} /> Chấm công bổ sung (Quản trị)
+        </h3>
+        
+        <div className="form-group">
+          <label className="form-label" style={{ fontSize: '0.65rem' }}>Chọn Cộng Tác Viên</label>
+          <select
+            value={manualCollabName}
+            onChange={(e) => setManualCollabName(e.target.value)}
+            required
+          >
+            <option value="">-- Chọn nhân sự --</option>
+            {collaborators.map((c) => (
+              <option key={c.id} value={c.name}>{c.name}</option>
+            ))}
+          </select>
+        </div>
+
+        <div className="date-filters">
+          <div>
+            <label className="form-label" style={{ fontSize: '0.65rem' }}>Ngày làm việc</label>
+            <input
+              type="date"
+              value={manualDate}
+              onChange={(e) => setManualDate(e.target.value)}
+              required
+            />
+          </div>
+          <div>
+            <label className="form-label" style={{ fontSize: '0.65rem' }}>Giờ vào ca</label>
+            <input
+              type="time"
+              value={manualCheckInTime}
+              onChange={(e) => setManualCheckInTime(e.target.value)}
+              required
+            />
+          </div>
+        </div>
+
+        <div className="date-filters" style={{ marginTop: '10px' }}>
+          <div>
+            <label className="form-label" style={{ fontSize: '0.65rem' }}>Giờ ra ca</label>
+            <input
+              type="time"
+              value={manualCheckOutTime}
+              onChange={(e) => setManualCheckOutTime(e.target.value)}
+              required
+            />
+          </div>
+          <div style={{ display: 'flex', alignItems: 'flex-end' }}>
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={handleSaveManualLog}
+              style={{ width: '100%', padding: '12px' }}
+            >
+              Lưu chấm công
+            </button>
           </div>
         </div>
       </div>
