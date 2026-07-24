@@ -41,6 +41,7 @@ export default function Dashboard({
 
   // Helper: calculate total hours (decimal format)
   const getDurationHours = (checkIn: number, checkOut: number) => {
+    if (!checkOut || checkOut === 0) return 0;
     const durationMs = checkOut - checkIn;
     const hours = durationMs / (1000 * 60 * 60);
     // Round to 2 decimal places
@@ -103,6 +104,7 @@ export default function Dashboard({
     const sortedLogsForExcel = [...filteredLogs].sort((a, b) => a.checkInTime - b.checkInTime);
 
     const data = sortedLogsForExcel.map((log, index) => {
+      const isWorking = !log.checkOutTime || log.checkOutTime === 0;
       const hours = getDurationHours(log.checkInTime, log.checkOutTime);
       const cost = hours * (log.hourlyRate ?? 42000);
       const formatTime = (ts: number) => new Date(ts).toLocaleTimeString('vi-VN');
@@ -112,10 +114,10 @@ export default function Dashboard({
         'Tên CTV': log.name,
         'Ngày làm việc': log.date.split('-').reverse().join('/'),
         'Giờ Vào': formatTime(log.checkInTime),
-        'Giờ Ra': formatTime(log.checkOutTime),
-        'Tổng Giờ': hours,
+        'Giờ Ra': isWorking ? 'Đang làm việc' : formatTime(log.checkOutTime),
+        'Tổng Giờ': isWorking ? '--' : hours,
         'Đơn giá (đ/h)': log.hourlyRate ?? 42000,
-        'Tổng Chi Phí (đ)': cost
+        'Tổng Chi Phí (đ)': isWorking ? '--' : cost
       };
     });
 
@@ -536,6 +538,7 @@ export default function Dashboard({
               </thead>
               <tbody>
                 {filteredLogs.map((log) => {
+                  const isWorking = !log.checkOutTime || log.checkOutTime === 0;
                   const hrs = getDurationHours(log.checkInTime, log.checkOutTime);
                   const cost = hrs * (log.hourlyRate ?? 42000);
                   return (
@@ -543,18 +546,38 @@ export default function Dashboard({
                       <td style={{ fontWeight: 600 }}>{log.name}</td>
                       <td>{log.date.split('-').reverse().join('/')}</td>
                       <td>{displayTime(log.checkInTime)}</td>
-                      <td>{displayTime(log.checkOutTime)}</td>
-                      <td>{hrs} giờ</td>
+                      <td>
+                        {isWorking ? (
+                          <span style={{ color: 'var(--warning)', fontWeight: 600, fontSize: '0.8rem' }}>
+                            Đang làm việc
+                          </span>
+                        ) : (
+                          displayTime(log.checkOutTime)
+                        )}
+                      </td>
+                      <td>
+                        {isWorking ? (
+                          <span style={{ color: 'var(--text-muted)' }}>--</span>
+                        ) : (
+                          `${hrs} giờ`
+                        )}
+                      </td>
                       <td>
                         <span className="badge-rate">
                           {(log.hourlyRate ?? 42000).toLocaleString('vi-VN')}đ
                         </span>
                       </td>
-                      <td style={{ fontWeight: 600, color: 'var(--primary-hover)' }}>
-                        {cost.toLocaleString('vi-VN')}đ
+                      <td style={{ fontWeight: 600, color: isWorking ? 'var(--text-secondary)' : 'var(--primary-hover)' }}>
+                        {isWorking ? (
+                          <span style={{ color: 'var(--text-muted)' }}>--</span>
+                        ) : (
+                          `${cost.toLocaleString('vi-VN')}đ`
+                        )}
                       </td>
                       <td>
-                        {log.signature ? (
+                        {isWorking ? (
+                          <span style={{ color: 'var(--text-muted)' }}>--</span>
+                        ) : log.signature ? (
                           <img
                             src={log.signature}
                             alt="Chữ ký"
