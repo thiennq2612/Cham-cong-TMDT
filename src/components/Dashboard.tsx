@@ -232,14 +232,19 @@ export default function Dashboard({
           <Search size={16} /> Bộ lọc dữ liệu
         </h3>
         
-        <div className="search-input-wrapper">
-          <Search size={16} className="search-icon" />
-          <input
-            type="text"
-            placeholder="Tìm theo tên CTV..."
+        <div className="form-group" style={{ marginBottom: 0 }}>
+          <select
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-          />
+            style={{ width: '100%' }}
+          >
+            <option value="">-- Chọn CTV để lọc (Tất cả) --</option>
+            {collaborators.map((c) => (
+              <option key={c.id} value={c.name}>
+                {c.name}
+              </option>
+            ))}
+          </select>
         </div>
         
         <div className="date-filters">
