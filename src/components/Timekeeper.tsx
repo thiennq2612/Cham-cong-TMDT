@@ -19,8 +19,8 @@ export default function Timekeeper({
   onCollaboratorAdded,
   onLogAdded
 }: TimekeeperProps) {
-  // Select collaborator state
-  const [selectedName, setSelectedName] = useState<string>('');
+  // Select collaborators state (supports multi-select)
+  const [selectedNames, setSelectedNames] = useState<string[]>([]);
   
   // Modal for new CTV
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -43,10 +43,12 @@ export default function Timekeeper({
   const [isDrawing, setIsDrawing] = useState(false);
   const [hasSignature, setHasSignature] = useState(false);
 
-  // Sync selectedName with searchQuery
-  useEffect(() => {
-    setSearchQuery(selectedName || '');
-  }, [selectedName]);
+  const toggleSelectName = (name: string) => {
+    setSelectedNames((prev) =>
+      prev.includes(name) ? prev.filter((n) => n !== name) : [...prev, name]
+    );
+    setSearchQuery(''); // clear typed search query on selection toggle
+  };
 
   // Click outside to close dropdown
   useEffect(() => {
@@ -66,10 +68,11 @@ export default function Timekeeper({
     collab.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  // Load active session from localStorage when collaborator changes
+  // Load active session from localStorage when collaborators list changes
   useEffect(() => {
-    if (selectedName) {
-      const savedSession = localStorage.getItem(`active_session_${selectedName}`);
+    if (selectedNames.length > 0) {
+      // Check the first selected name's active session as representative
+      const savedSession = localStorage.getItem(`active_session_${selectedNames[0]}`);
       if (savedSession) {
         const parsed: ActiveSession = JSON.parse(savedSession);
         setCheckInTime(parsed.checkInTime);
@@ -85,7 +88,7 @@ export default function Timekeeper({
       setCheckOutTime(null);
       clearSignature();
     }
-  }, [selectedName]);
+  }, [selectedNames]);
 
   // Initial setup of signature canvas resizing
   useEffect(() => {
@@ -140,7 +143,7 @@ export default function Timekeeper({
     try {
       await addCollaborator(newCTVName.trim(), Number(newCTVRate));
       onCollaboratorAdded();
-      setSelectedName(newCTVName.trim());
+      setSelectedNames((prev) => [...prev, newCTVName.trim()]);
       setNewCTVName('');
       setNewCTVRate(42000);
       setIsModalOpen(false);
@@ -151,13 +154,15 @@ export default function Timekeeper({
 
   // Check-in Action
   const handleCheckIn = () => {
-    if (!selectedName) return;
+    if (selectedNames.length === 0) return;
     const now = Date.now();
-    const session: ActiveSession = {
-      collaboratorName: selectedName,
-      checkInTime: now
-    };
-    localStorage.setItem(`active_session_${selectedName}`, JSON.stringify(session));
+    selectedNames.forEach((name) => {
+      const session: ActiveSession = {
+        collaboratorName: name,
+        checkInTime: now
+      };
+      localStorage.setItem(`active_session_${name}`, JSON.stringify(session));
+    });
     setCheckInTime(now);
   };
 
@@ -229,39 +234,46 @@ export default function Timekeeper({
 
   // Submit and save to database
   const handleSubmit = async () => {
-    if (!selectedName || !checkInTime || !checkOutTime || !hasSignature || !canvasRef.current) {
-      alert('Vui lòng hoàn thành check-in, check-out và ký tên đầy đủ!');
+    if (selectedNames.length === 0 || !checkInTime || !checkOutTime) {
+      alert('Vui lòng hoàn thành check-in và check-out đầy đủ!');
       return;
     }
 
-    const signatureBase64 = canvasRef.current.toDataURL('image/png');
+    const isSingle = selectedNames.length === 1;
+    if (isSingle && !hasSignature) {
+      alert('Vui lòng ký tên xác nhận!');
+      return;
+    }
+
     const today = new Date(checkInTime).toISOString().split('T')[0];
-
-    const selectedCollab = collaborators.find(c => c.name === selectedName);
-    const resolvedRate = selectedCollab?.hourlyRate ?? 42000;
-
-    const logData = {
-      name: selectedName,
-      date: today,
-      checkInTime,
-      checkOutTime,
-      signature: signatureBase64,
-      hourlyRate: resolvedRate
-    };
+    const stampSVG = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="150" height="50" viewBox="0 0 150 50"><rect width="100%" height="100%" fill="%23f59e0b" rx="5"/><text x="50%" y="60%" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="12" font-weight="bold" fill="white">QUẢN LÝ BỔ SUNG</text></svg>`;
+    const signatureData = isSingle && canvasRef.current ? canvasRef.current.toDataURL('image/png') : stampSVG;
 
     try {
-      await addTimeLog(logData);
-      
-      // Clear localStorage active session
-      localStorage.removeItem(`active_session_${selectedName}`);
-      
+      for (const name of selectedNames) {
+        const selectedCollab = collaborators.find(c => c.name === name);
+        const resolvedRate = selectedCollab?.hourlyRate ?? 42000;
+
+        const logData = {
+          name,
+          date: today,
+          checkInTime,
+          checkOutTime,
+          signature: signatureData,
+          hourlyRate: resolvedRate
+        };
+        await addTimeLog(logData);
+        localStorage.removeItem(`active_session_${name}`);
+      }
+
       // Reset component states
+      setSelectedNames([]);
       setCheckInTime(null);
       setCheckOutTime(null);
       clearSignature();
       onLogAdded();
       
-      alert('Gửi báo cáo chấm công thành công!');
+      alert(isSingle ? 'Gửi báo cáo chấm công thành công!' : 'Đã gửi chấm công hàng loạt thành công!');
     } catch (err) {
       alert('Không thể lưu thông tin chấm công. Vui lòng thử lại!');
     }
@@ -290,14 +302,11 @@ export default function Timekeeper({
               <div className="searchable-select-input-wrapper">
                 <input
                   type="text"
-                  placeholder="Tìm kiếm hoặc chọn CTV..."
+                  placeholder={selectedNames.length > 0 ? `Đã chọn ${selectedNames.length} CTV` : "Tìm kiếm hoặc chọn CTV..."}
                   value={searchQuery}
                   onChange={(e) => {
                     setSearchQuery(e.target.value);
                     setIsOpen(true);
-                    if (selectedName && e.target.value !== selectedName) {
-                      setSelectedName('');
-                    }
                   }}
                   onFocus={() => setIsOpen(true)}
                 />
@@ -312,13 +321,16 @@ export default function Timekeeper({
                     filteredCollaborators.map((collab) => (
                       <div
                         key={collab.id}
-                        className={`searchable-select-option ${selectedName === collab.name ? 'selected' : ''}`}
-                        onClick={() => {
-                          setSelectedName(collab.name);
-                          setSearchQuery(collab.name);
-                          setIsOpen(false);
-                        }}
+                        className={`searchable-select-option ${selectedNames.includes(collab.name) ? 'selected' : ''}`}
+                        onClick={() => toggleSelectName(collab.name)}
+                        style={{ display: 'flex', justifyContent: 'flex-start', gap: '10px' }}
                       >
+                        <input
+                          type="checkbox"
+                          checked={selectedNames.includes(collab.name)}
+                          onChange={() => {}}
+                          style={{ pointerEvents: 'none' }}
+                        />
                         {collab.name}
                       </div>
                     ))
@@ -336,6 +348,46 @@ export default function Timekeeper({
               <UserPlus size={20} />
             </button>
           </div>
+
+          {/* Selected tags */}
+          {selectedNames.length > 0 && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '10px' }}>
+              {selectedNames.map((name) => (
+                <span key={name} style={{
+                  background: 'rgba(139, 92, 246, 0.15)',
+                  color: '#c084fc',
+                  padding: '4px 10px',
+                  borderRadius: '9999px',
+                  fontSize: '0.75rem',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  fontWeight: 600,
+                  border: '1px solid rgba(139, 92, 246, 0.2)'
+                }}>
+                  {name}
+                  <button
+                    type="button"
+                    onClick={() => toggleSelectName(name)}
+                    style={{
+                      background: 'transparent',
+                      border: 'none',
+                      color: '#c084fc',
+                      cursor: 'pointer',
+                      padding: 0,
+                      fontSize: '0.9rem',
+                      lineHeight: 1,
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      fontWeight: 'bold'
+                    }}
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Check-in & Check-out Status Panels */}
@@ -360,7 +412,7 @@ export default function Timekeeper({
             type="button"
             className="btn btn-success"
             onClick={handleCheckIn}
-            disabled={!selectedName || checkInTime !== null}
+            disabled={selectedNames.length === 0 || checkInTime !== null}
           >
             <Play size={18} />
             Vào ca (Check-in)
@@ -369,46 +421,70 @@ export default function Timekeeper({
             type="button"
             className="btn btn-secondary"
             onClick={handleCheckOut}
-            disabled={!selectedName || checkInTime === null || checkOutTime !== null}
+            disabled={selectedNames.length === 0 || checkInTime === null || checkOutTime !== null}
           >
             <Square size={16} />
             Ra ca (Check-out)
           </button>
         </div>
 
-        {/* Signature Capture Canvas */}
-        <div className="signature-section">
-          <label className="form-label">Ký tên xác nhận</label>
-          <div className={`canvas-wrapper ${hasSignature ? 'active' : ''}`}>
-            <canvas
-              ref={canvasRef}
-              onMouseDown={startDrawing}
-              onMouseMove={draw}
-              onMouseUp={stopDrawing}
-              onMouseLeave={stopDrawing}
-              onTouchStart={startDrawing}
-              onTouchMove={draw}
-              onTouchEnd={stopDrawing}
-            />
-            {!hasSignature && (
-              <div className="canvas-hint">
-                Dùng ngón tay ký tên trực tiếp tại đây
-              </div>
-            )}
+        {/* Signature Capture Canvas or Manager override */}
+        {selectedNames.length > 1 ? (
+          <div style={{
+            background: 'rgba(245, 158, 11, 0.08)',
+            border: '1px dashed rgba(245, 158, 11, 0.3)',
+            borderRadius: 'var(--border-radius-md)',
+            padding: '16px',
+            marginBottom: '24px',
+            textAlign: 'center',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '6px'
+          }}>
+            <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--warning)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+              CHỮ KÝ XÁC NHẬN TỰ ĐỘNG
+            </span>
+            <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+              Bạn đang chấm công cho <strong>{selectedNames.length} nhân sự</strong> cùng lúc.
+            </p>
+            <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+              Hệ thống sẽ tự động ký nhận bằng dấu mộc <strong style={{ color: 'var(--warning)' }}>"QUẢN LÝ BỔ SUNG"</strong> cho tất cả mọi người.
+            </p>
           </div>
-          <div className="canvas-actions">
-            <button
-              type="button"
-              className="btn btn-danger-outline btn-sm"
-              onClick={clearSignature}
-              disabled={!hasSignature}
-              style={{ padding: '6px 12px', fontSize: '0.75rem' }}
-            >
-              <Trash2 size={12} />
-              Xóa chữ ký (Clear)
-            </button>
+        ) : (
+          <div className="signature-section">
+            <label className="form-label">Ký tên xác nhận</label>
+            <div className={`canvas-wrapper ${hasSignature ? 'active' : ''}`}>
+              <canvas
+                ref={canvasRef}
+                onMouseDown={startDrawing}
+                onMouseMove={draw}
+                onMouseUp={stopDrawing}
+                onMouseLeave={stopDrawing}
+                onTouchStart={startDrawing}
+                onTouchMove={draw}
+                onTouchEnd={stopDrawing}
+              />
+              {!hasSignature && (
+                <div className="canvas-hint">
+                  Dùng ngón tay ký tên trực tiếp tại đây
+                </div>
+              )}
+            </div>
+            <div className="canvas-actions">
+              <button
+                type="button"
+                className="btn btn-danger-outline btn-sm"
+                onClick={clearSignature}
+                disabled={!hasSignature}
+                style={{ padding: '6px 12px', fontSize: '0.75rem' }}
+              >
+                <Trash2 size={12} />
+                Xóa chữ ký (Clear)
+              </button>
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Submit */}
         <div className="bottom-sticky-button">
@@ -416,10 +492,15 @@ export default function Timekeeper({
             type="button"
             className="btn btn-primary"
             onClick={handleSubmit}
-            disabled={!selectedName || !checkInTime || !checkOutTime || !hasSignature}
+            disabled={
+              selectedNames.length === 0 || 
+              !checkInTime || 
+              !checkOutTime || 
+              (selectedNames.length === 1 && !hasSignature)
+            }
           >
             <CheckCircle2 size={18} />
-            Hoàn tất & Gửi chấm công
+            {selectedNames.length > 1 ? 'Hoàn tất & Gửi chấm công nhóm' : 'Hoàn tất & Gửi chấm công'}
           </button>
         </div>
       </div>
