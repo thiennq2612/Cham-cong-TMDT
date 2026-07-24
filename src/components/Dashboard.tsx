@@ -45,12 +45,13 @@ export default function Dashboard({
   const [zoomedSignature, setZoomedSignature] = useState<string | null>(null);
 
   // Helper: calculate total hours (decimal format)
-  const getDurationHours = (checkIn: number, checkOut: number) => {
+  const getDurationHours = (checkIn: number, checkOut: number, lunchBreak?: boolean, afternoonBreak?: boolean) => {
     if (!checkOut || checkOut === 0) return 0;
     const durationMs = checkOut - checkIn;
-    const hours = durationMs / (1000 * 60 * 60);
+    const rawHours = durationMs / (1000 * 60 * 60);
+    const finalHours = Math.max(0, rawHours - (lunchBreak ? 1.5 : 0) - (afternoonBreak ? 0.5 : 0));
     // Round to 2 decimal places
-    return Math.round(hours * 100) / 100;
+    return Math.round(finalHours * 100) / 100;
   };
 
   // Sync filterSearchQuery with searchTerm
@@ -141,10 +142,19 @@ export default function Dashboard({
 
     const data = sortedLogsForExcel.map((log, index) => {
       const isWorking = !log.checkOutTime || log.checkOutTime === 0;
-      const hours = getDurationHours(log.checkInTime, log.checkOutTime);
+      const hours = getDurationHours(log.checkInTime, log.checkOutTime, log.lunchBreak, log.afternoonBreak);
       const cost = hours * (log.hourlyRate ?? 42000);
       const formatTime = (ts: number) => new Date(ts).toLocaleTimeString('vi-VN');
       
+      let breakText = 'Không';
+      if (log.lunchBreak && log.afternoonBreak) {
+        breakText = 'Trưa & Chiều';
+      } else if (log.lunchBreak) {
+        breakText = 'Nghỉ trưa (-1.5h)';
+      } else if (log.afternoonBreak) {
+        breakText = 'Nghỉ chiều (-0.5h)';
+      }
+
       return {
         'STT': index + 1,
         'Tên CTV': log.name,
@@ -152,6 +162,7 @@ export default function Dashboard({
         'Giờ Vào': formatTime(log.checkInTime),
         'Giờ Ra': isWorking ? 'Đang làm việc' : formatTime(log.checkOutTime),
         'Tổng Giờ': isWorking ? '--' : hours,
+        'Khấu trừ nghỉ': isWorking ? '--' : breakText,
         'Đơn giá (đ/h)': log.hourlyRate ?? 42000,
         'Tổng Chi Phí (đ)': isWorking ? '--' : cost
       };
@@ -167,6 +178,7 @@ export default function Dashboard({
       { wch: 12 }, // Giờ Vào
       { wch: 12 }, // Giờ Ra
       { wch: 10 }, // Tổng Giờ
+      { wch: 18 }, // Khấu trừ nghỉ
       { wch: 14 }, // Đơn giá
       { wch: 18 }  // Tổng Chi Phí
     ];
@@ -666,7 +678,14 @@ export default function Dashboard({
                         {isWorking ? (
                           <span style={{ color: 'var(--text-muted)' }}>--</span>
                         ) : (
-                          `${hrs} giờ`
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                            <span style={{ fontWeight: 500 }}>{hrs} giờ</span>
+                            {(log.lunchBreak || log.afternoonBreak) && (
+                              <span style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', fontStyle: 'italic' }}>
+                                {log.lunchBreak && log.afternoonBreak ? '(Trừ trưa & chiều)' : log.lunchBreak ? '(Trừ nghỉ trưa)' : '(Trừ nghỉ chiều)'}
+                              </span>
+                            )}
+                          </div>
                         )}
                       </td>
                       <td>
