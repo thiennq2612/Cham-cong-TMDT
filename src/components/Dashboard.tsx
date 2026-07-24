@@ -30,6 +30,9 @@ export default function Dashboard({
   // Collaborators search state
   const [collabSearch, setCollabSearch] = useState('');
 
+  // Today's attendance list sorting state
+  const [attendanceSortOrder, setAttendanceSortOrder] = useState<string>('default');
+
   // Manual timekeeping adjustment form states
   const [manualCollabName, setManualCollabName] = useState('');
   const [manualDate, setManualDate] = useState('');
@@ -241,7 +244,7 @@ export default function Dashboard({
     // Filter logs of today
     const todayLogs = logs.filter(log => log.date === localTodayStr);
     
-    return collaborators.map(collab => {
+    const list = collaborators.map(collab => {
       // Find if this collaborator has any log today
       const collabLogs = todayLogs.filter(log => log.name === collab.name);
       
@@ -269,6 +272,30 @@ export default function Dashboard({
         detail
       };
     });
+
+    // Sort list based on selected sort order
+    if (attendanceSortOrder === 'working') {
+      return [...list].sort((a, b) => {
+        if (a.status === 'working' && b.status !== 'working') return -1;
+        if (a.status !== 'working' && b.status === 'working') return 1;
+        return a.name.localeCompare(b.name);
+      });
+    } else if (attendanceSortOrder === 'not_in') {
+      return [...list].sort((a, b) => {
+        if (a.status === 'not_in' && b.status !== 'not_in') return -1;
+        if (a.status !== 'not_in' && b.status === 'not_in') return 1;
+        return a.name.localeCompare(b.name);
+      });
+    } else if (attendanceSortOrder === 'finished') {
+      return [...list].sort((a, b) => {
+        if (a.status === 'finished' && b.status !== 'finished') return -1;
+        if (a.status !== 'finished' && b.status === 'finished') return 1;
+        return a.name.localeCompare(b.name);
+      });
+    }
+
+    // Default alphabetical by name
+    return [...list].sort((a, b) => a.name.localeCompare(b.name));
   };
 
   const todayAttendance = getTodayAttendance();
@@ -298,13 +325,34 @@ export default function Dashboard({
 
       {/* Today's Attendance Status Card */}
       <div className="panel-card" style={{ marginBottom: '20px' }}>
-        <h3 className="panel-title" style={{ marginBottom: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <h3 className="panel-title" style={{ marginBottom: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
           <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <Users size={18} /> Điểm danh hôm nay ({new Date().toLocaleDateString('vi-VN')})
           </span>
-          <span style={{ fontSize: '0.75rem', fontWeight: 'normal', color: 'var(--text-secondary)' }}>
-            Tổng số: {collaborators.length} CTV
-          </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+            <select
+              value={attendanceSortOrder}
+              onChange={(e) => setAttendanceSortOrder(e.target.value)}
+              style={{
+                padding: '4px 8px',
+                fontSize: '0.7rem',
+                background: 'var(--bg-dark)',
+                border: '1px solid var(--border-color)',
+                borderRadius: '4px',
+                color: 'var(--text-primary)',
+                cursor: 'pointer',
+                outline: 'none'
+              }}
+            >
+              <option value="default">Sắp xếp: Mặc định</option>
+              <option value="working">Đang làm việc lên trước</option>
+              <option value="not_in">Chưa vào ca lên trước</option>
+              <option value="finished">Đã ra ca lên trước</option>
+            </select>
+            <span style={{ fontSize: '0.75rem', fontWeight: 'normal', color: 'var(--text-secondary)' }}>
+              Tổng số: {collaborators.length} CTV
+            </span>
+          </div>
         </h3>
         
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(145px, 1fr))', gap: '10px', maxHeight: '260px', overflowY: 'auto', paddingRight: '4px' }}>
