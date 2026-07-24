@@ -231,6 +231,46 @@ export default function Dashboard({
     }
   };
 
+  // Compute today's attendance status
+  const getTodayAttendance = () => {
+    // Today's date in GMT+7 / local timezone YYYY-MM-DD
+    const localTodayStr = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0];
+    
+    // Filter logs of today
+    const todayLogs = logs.filter(log => log.date === localTodayStr);
+    
+    return collaborators.map(collab => {
+      // Find if this collaborator has any log today
+      const collabLogs = todayLogs.filter(log => log.name === collab.name);
+      
+      let status: 'not_in' | 'working' | 'finished' = 'not_in';
+      let detail = '';
+      
+      if (collabLogs.length > 0) {
+        // Since logs are sorted desc by checkInTime, collabLogs[0] is the latest log of today
+        const latestLog = collabLogs[0];
+        if (latestLog.checkOutTime === 0 || !latestLog.checkOutTime) {
+          status = 'working';
+          detail = `Vào ca lúc ${new Date(latestLog.checkInTime).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}`;
+        } else {
+          status = 'finished';
+          const durationMs = latestLog.checkOutTime - latestLog.checkInTime;
+          const hours = Math.round((durationMs / (1000 * 60 * 60)) * 100) / 100;
+          detail = `Đã ra ca (${hours}h)`;
+        }
+      }
+      
+      return {
+        id: collab.id,
+        name: collab.name,
+        status,
+        detail
+      };
+    });
+  };
+
+  const todayAttendance = getTodayAttendance();
+
   return (
     <>
       {/* Metrics Section */}
@@ -251,6 +291,64 @@ export default function Dashboard({
             {formatCurrency(totalCost).replace(' ₫', 'đ')}
           </span>
           <span className="metric-label">Tổng chi</span>
+        </div>
+      </div>
+
+      {/* Today's Attendance Status Card */}
+      <div className="panel-card" style={{ marginBottom: '20px' }}>
+        <h3 className="panel-title" style={{ marginBottom: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <Users size={18} /> Điểm danh hôm nay ({new Date().toLocaleDateString('vi-VN')})
+          </span>
+          <span style={{ fontSize: '0.75rem', fontWeight: 'normal', color: 'var(--text-secondary)' }}>
+            Tổng số: {collaborators.length} CTV
+          </span>
+        </h3>
+        
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: '10px', maxHeight: '180px', overflowY: 'auto', paddingRight: '4px' }}>
+          {todayAttendance.map((item) => {
+            let badgeBg = 'rgba(239, 68, 68, 0.08)';
+            let badgeColor = '#ef4444';
+            let statusLabel = 'Chưa vào ca';
+            
+            if (item.status === 'working') {
+              badgeBg = 'rgba(245, 158, 11, 0.12)';
+              badgeColor = '#f59e0b';
+              statusLabel = item.detail;
+            } else if (item.status === 'finished') {
+              badgeBg = 'rgba(16, 185, 129, 0.12)';
+              badgeColor = '#10b981';
+              statusLabel = item.detail;
+            }
+            
+            return (
+              <div key={item.id} style={{
+                background: 'var(--bg-dark-secondary)',
+                border: '1px solid var(--border-color)',
+                borderRadius: '8px',
+                padding: '8px 12px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '4px'
+              }}>
+                <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={item.name}>
+                  {item.name}
+                </span>
+                <span style={{
+                  background: badgeBg,
+                  color: badgeColor,
+                  padding: '2px 6px',
+                  borderRadius: '4px',
+                  fontSize: '0.65rem',
+                  fontWeight: 600,
+                  display: 'inline-block',
+                  width: 'fit-content'
+                }}>
+                  {statusLabel}
+                </span>
+              </div>
+            );
+          })}
         </div>
       </div>
 

@@ -7,7 +7,9 @@ import {
   deleteDoc, 
   doc, 
   query, 
-  orderBy 
+  orderBy,
+  updateDoc,
+  onSnapshot
 } from 'firebase/firestore';
 
 // ==========================================
@@ -117,4 +119,47 @@ export async function addTimeLog(log: Omit<TimeLog, 'id'>): Promise<string> {
 
 export async function deleteTimeLog(id: string): Promise<void> {
   await deleteDoc(doc(firestore, LOGS_COLLECTION, id));
+}
+
+export async function updateTimeLog(id: string, updates: Partial<TimeLog>): Promise<void> {
+  await updateDoc(doc(firestore, LOGS_COLLECTION, id), updates);
+}
+
+export function subscribeTimeLogs(callback: (logs: TimeLog[]) => void) {
+  const q = query(collection(firestore, LOGS_COLLECTION), orderBy('checkInTime', 'desc'));
+  return onSnapshot(q, (querySnapshot) => {
+    const logs: TimeLog[] = [];
+    querySnapshot.forEach((doc) => {
+      const data = doc.data();
+      logs.push({
+        id: doc.id,
+        name: data.name,
+        date: data.date,
+        checkInTime: data.checkInTime,
+        checkOutTime: data.checkOutTime,
+        signature: data.signature,
+        hourlyRate: data.hourlyRate ?? 42000
+      });
+    });
+    callback(logs);
+  }, (err) => {
+    console.error('Error listening to logs: ', err);
+  });
+}
+
+export function subscribeCollaborators(callback: (collabs: Collaborator[]) => void) {
+  return onSnapshot(collection(firestore, COLLAB_COLLECTION), (querySnapshot) => {
+    const collabs: Collaborator[] = [];
+    querySnapshot.forEach((doc) => {
+      const data = doc.data();
+      collabs.push({
+        id: doc.id,
+        name: data.name,
+        hourlyRate: data.hourlyRate ?? 42000
+      });
+    });
+    callback(collabs);
+  }, (err) => {
+    console.error('Error listening to collaborators: ', err);
+  });
 }

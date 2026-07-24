@@ -1,5 +1,9 @@
 import { useState, useEffect } from 'react';
-import { getCollaborators, getTimeLogs, initDefaultCollaborators } from './services/db';
+import { 
+  initDefaultCollaborators,
+  subscribeCollaborators,
+  subscribeTimeLogs
+} from './services/db';
 import type { Collaborator, TimeLog } from './services/db';
 import Timekeeper from './components/Timekeeper';
 import Dashboard from './components/Dashboard';
@@ -11,23 +15,35 @@ export default function App() {
   const [logs, setLogs] = useState<TimeLog[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Initialize and load database
-  const loadData = async () => {
-    try {
-      await initDefaultCollaborators();
-      const collabsList = await getCollaborators();
-      const logsList = await getTimeLogs();
-      setCollaborators(collabsList);
-      setLogs(logsList);
-    } catch (err) {
-      console.error('Failed to load database records', err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
+  // Initialize and load database in real-time
   useEffect(() => {
-    loadData();
+    let unsubCollabs: () => void = () => {};
+    let unsubLogs: () => void = () => {};
+
+    const setupSubscriptions = async () => {
+      try {
+        await initDefaultCollaborators();
+        
+        unsubCollabs = subscribeCollaborators((list) => {
+          setCollaborators(list);
+        });
+
+        unsubLogs = subscribeTimeLogs((list) => {
+          setLogs(list);
+        });
+      } catch (err) {
+        console.error('Failed to initialize real-time subscription', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    setupSubscriptions();
+
+    return () => {
+      unsubCollabs();
+      unsubLogs();
+    };
   }, []);
 
   // Update layout constraints depending on the tab for premium user experience
@@ -42,20 +58,9 @@ export default function App() {
     }
   }, [activeTab]);
 
-  const handleCollaboratorAdded = async () => {
-    const list = await getCollaborators();
-    setCollaborators(list);
-  };
-
-  const handleLogAdded = async () => {
-    const list = await getTimeLogs();
-    setLogs(list);
-  };
-
-  const handleLogDeleted = async () => {
-    const list = await getTimeLogs();
-    setLogs(list);
-  };
+  const handleCollaboratorAdded = () => {};
+  const handleLogAdded = () => {};
+  const handleLogDeleted = () => {};
 
   if (loading) {
     return (

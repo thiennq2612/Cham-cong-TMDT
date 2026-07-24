@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { addCollaborator, addTimeLog } from '../services/db';
+import { addCollaborator, addTimeLog, updateTimeLog } from '../services/db';
 import type { Collaborator } from '../services/db';
 import { Play, Square, PenTool, Trash2, CheckCircle2, UserPlus, X } from 'lucide-react';
 
@@ -12,6 +12,7 @@ interface TimekeeperProps {
 interface ActiveSession {
   collaboratorName: string;
   checkInTime: number;
+  docId?: string;
 }
 
 export default function Timekeeper({
@@ -153,17 +154,39 @@ export default function Timekeeper({
   };
 
   // Check-in Action
-  const handleCheckIn = () => {
+  const handleCheckIn = async () => {
     if (selectedNames.length === 0) return;
     const now = Date.now();
-    selectedNames.forEach((name) => {
-      const session: ActiveSession = {
-        collaboratorName: name,
-        checkInTime: now
-      };
-      localStorage.setItem(`active_session_${name}`, JSON.stringify(session));
-    });
-    setCheckInTime(now);
+    const today = new Date(now).toISOString().split('T')[0];
+
+    try {
+      for (const name of selectedNames) {
+        const selectedCollab = collaborators.find(c => c.name === name);
+        const resolvedRate = selectedCollab?.hourlyRate ?? 42000;
+
+        // Create log record in Firestore immediately with empty checkout and signature
+        const logId = await addTimeLog({
+          name,
+          date: today,
+          checkInTime: now,
+          checkOutTime: 0,
+          signature: '',
+          hourlyRate: resolvedRate
+        });
+
+        const session: ActiveSession = {
+          collaboratorName: name,
+          checkInTime: now,
+          docId: logId
+        };
+        localStorage.setItem(`active_session_${name}`, JSON.stringify(session));
+      }
+      
+      setCheckInTime(now);
+      onLogAdded();
+    } catch (err) {
+      alert('Không thể bắt đầu vào ca. Vui lòng thử lại!');
+    }
   };
 
   // Check-out Action
@@ -251,19 +274,42 @@ export default function Timekeeper({
 
     try {
       for (const name of selectedNames) {
-        const selectedCollab = collaborators.find(c => c.name === name);
-        const resolvedRate = selectedCollab?.hourlyRate ?? 42000;
-
-        const logData = {
-          name,
-          date: today,
-          checkInTime,
-          checkOutTime,
-          signature: signatureData,
-          hourlyRate: resolvedRate
-        };
-        await addTimeLog(logData);
-        localStorage.removeItem(`active_session_${name}`);
+        const savedSession = localStorage.getItem(`active_session_${name}`);
+        if (savedSession) {
+          const parsed: ActiveSession = JSON.parse(savedSession);
+          if (parsed.docId) {
+            // Update the existing document with checkOutTime and signature
+            await updateTimeLog(parsed.docId, {
+              checkOutTime,
+              signature: signatureData
+            });
+          } else {
+            // Fallback if docId is somehow missing
+            const selectedCollab = collaborators.find(c => c.name === name);
+            const resolvedRate = selectedCollab?.hourlyRate ?? 42000;
+            await addTimeLog({
+              name,
+              date: today,
+              checkInTime,
+              checkOutTime,
+              signature: signatureData,
+              hourlyRate: resolvedRate
+            });
+          }
+          localStorage.removeItem(`active_session_${name}`);
+        } else {
+          // Fallback if session is somehow missing
+          const selectedCollab = collaborators.find(c => c.name === name);
+          const resolvedRate = selectedCollab?.hourlyRate ?? 42000;
+          await addTimeLog({
+            name,
+            date: today,
+            checkInTime,
+            checkOutTime,
+            signature: signatureData,
+            hourlyRate: resolvedRate
+          });
+        }
       }
 
       // Reset component states
