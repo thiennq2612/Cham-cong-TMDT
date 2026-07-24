@@ -1,27 +1,26 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { addCollaborator, addTimeLog, updateTimeLog } from '../services/db';
-import type { Collaborator } from '../services/db';
+import type { Collaborator, TimeLog } from '../services/db';
 import { Play, Square, PenTool, Trash2, CheckCircle2, UserPlus, X } from 'lucide-react';
 
 interface TimekeeperProps {
   collaborators: Collaborator[];
+  logs: TimeLog[];
   onCollaboratorAdded: () => void;
   onLogAdded: () => void;
 }
 
-interface ActiveSession {
-  collaboratorName: string;
-  checkInTime: number;
-  docId?: string;
-}
-
 export default function Timekeeper({
   collaborators,
+  logs,
   onCollaboratorAdded,
   onLogAdded
 }: TimekeeperProps) {
   // Select collaborators state (supports multi-select)
   const [selectedNames, setSelectedNames] = useState<string[]>([]);
+
+  // Submission loading state to block double clicks
+  const [isSubmitting, setIsSubmitting] = useState(false);
   
   // Modal for new CTV
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -69,14 +68,13 @@ export default function Timekeeper({
     collab.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  // Load active session from localStorage when collaborators list changes
+  // Load active session from Firestore logs when collaborators list or logs change
   useEffect(() => {
     if (selectedNames.length > 0) {
-      // Check the first selected name's active session as representative
-      const savedSession = localStorage.getItem(`active_session_${selectedNames[0]}`);
-      if (savedSession) {
-        const parsed: ActiveSession = JSON.parse(savedSession);
-        setCheckInTime(parsed.checkInTime);
+      // Find if the first selected name has an active session in Firestore
+      const activeLog = logs.find(log => log.name === selectedNames[0] && (!log.checkOutTime || log.checkOutTime === 0));
+      if (activeLog) {
+        setCheckInTime(activeLog.checkInTime);
         setCheckOutTime(null);
         clearSignature();
       } else {
@@ -89,7 +87,7 @@ export default function Timekeeper({
       setCheckOutTime(null);
       clearSignature();
     }
-  }, [selectedNames]);
+  }, [selectedNames, logs]);
 
   // Initial setup of signature canvas resizing
   useEffect(() => {
@@ -155,7 +153,18 @@ export default function Timekeeper({
 
   // Check-in Action
   const handleCheckIn = async () => {
-    if (selectedNames.length === 0) return;
+    if (selectedNames.length === 0 || isSubmitting) return;
+    
+    // Validate if anyone in selection is already in a ca
+    const alreadyCheckedIn = selectedNames.filter(name =>
+      logs.some(log => log.name === name && (!log.checkOutTime || log.checkOutTime === 0))
+    );
+    if (alreadyCheckedIn.length > 0) {
+      alert(`Nhân sự sau đã vào ca rồi: ${alreadyCheckedIn.join(', ')}`);
+      return;
+    }
+
+    setIsSubmitting(true);
     const now = Date.now();
     const today = new Date(now).toISOString().split('T')[0];
 
@@ -164,8 +173,8 @@ export default function Timekeeper({
         const selectedCollab = collaborators.find(c => c.name === name);
         const resolvedRate = selectedCollab?.hourlyRate ?? 42000;
 
-        // Create log record in Firestore immediately with empty checkout and signature
-        const logId = await addTimeLog({
+        // Create log record in Firestore immediately
+        await addTimeLog({
           name,
           date: today,
           checkInTime: now,
@@ -173,19 +182,14 @@ export default function Timekeeper({
           signature: '',
           hourlyRate: resolvedRate
         });
-
-        const session: ActiveSession = {
-          collaboratorName: name,
-          checkInTime: now,
-          docId: logId
-        };
-        localStorage.setItem(`active_session_${name}`, JSON.stringify(session));
       }
       
       setCheckInTime(now);
       onLogAdded();
     } catch (err) {
       alert('Không thể bắt đầu vào ca. Vui lòng thử lại!');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -257,7 +261,7 @@ export default function Timekeeper({
 
   // Submit and save to database
   const handleSubmit = async () => {
-    if (selectedNames.length === 0 || !checkInTime || !checkOutTime) {
+    if (selectedNames.length === 0 || !checkInTime || !checkOutTime || isSubmitting) {
       alert('Vui lòng hoàn thành check-in và check-out đầy đủ!');
       return;
     }
@@ -268,37 +272,24 @@ export default function Timekeeper({
       return;
     }
 
+    setIsSubmitting(true);
     const today = new Date(checkInTime).toISOString().split('T')[0];
     const stampSVG = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="150" height="50" viewBox="0 0 150 50"><rect width="100%" height="100%" fill="%23f59e0b" rx="5"/><text x="50%" y="60%" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="12" font-weight="bold" fill="white">QUẢN LÝ BỔ SUNG</text></svg>`;
     const signatureData = isSingle && canvasRef.current ? canvasRef.current.toDataURL('image/png') : stampSVG;
 
     try {
       for (const name of selectedNames) {
-        const savedSession = localStorage.getItem(`active_session_${name}`);
-        if (savedSession) {
-          const parsed: ActiveSession = JSON.parse(savedSession);
-          if (parsed.docId) {
-            // Update the existing document with checkOutTime and signature
-            await updateTimeLog(parsed.docId, {
-              checkOutTime,
-              signature: signatureData
-            });
-          } else {
-            // Fallback if docId is somehow missing
-            const selectedCollab = collaborators.find(c => c.name === name);
-            const resolvedRate = selectedCollab?.hourlyRate ?? 42000;
-            await addTimeLog({
-              name,
-              date: today,
-              checkInTime,
-              checkOutTime,
-              signature: signatureData,
-              hourlyRate: resolvedRate
-            });
-          }
-          localStorage.removeItem(`active_session_${name}`);
+        // Find active log in Firestore logs list
+        const activeLog = logs.find(log => log.name === name && (!log.checkOutTime || log.checkOutTime === 0));
+        
+        if (activeLog && activeLog.id) {
+          // Update the existing document with checkOutTime and signature
+          await updateTimeLog(activeLog.id, {
+            checkOutTime,
+            signature: signatureData
+          });
         } else {
-          // Fallback if session is somehow missing
+          // Fallback if no active log found (e.g. manual adjustments)
           const selectedCollab = collaborators.find(c => c.name === name);
           const resolvedRate = selectedCollab?.hourlyRate ?? 42000;
           await addTimeLog({
@@ -310,6 +301,7 @@ export default function Timekeeper({
             hourlyRate: resolvedRate
           });
         }
+        localStorage.removeItem(`active_session_${name}`);
       }
 
       // Reset component states
@@ -322,6 +314,8 @@ export default function Timekeeper({
       alert(isSingle ? 'Gửi báo cáo chấm công thành công!' : 'Đã gửi chấm công hàng loạt thành công!');
     } catch (err) {
       alert('Không thể lưu thông tin chấm công. Vui lòng thử lại!');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -458,7 +452,7 @@ export default function Timekeeper({
             type="button"
             className="btn btn-success"
             onClick={handleCheckIn}
-            disabled={selectedNames.length === 0 || checkInTime !== null}
+            disabled={selectedNames.length === 0 || checkInTime !== null || isSubmitting}
           >
             <Play size={18} />
             Vào ca (Check-in)
@@ -467,7 +461,7 @@ export default function Timekeeper({
             type="button"
             className="btn btn-secondary"
             onClick={handleCheckOut}
-            disabled={selectedNames.length === 0 || checkInTime === null || checkOutTime !== null}
+            disabled={selectedNames.length === 0 || checkInTime === null || checkOutTime !== null || isSubmitting}
           >
             <Square size={16} />
             Ra ca (Check-out)
@@ -542,7 +536,8 @@ export default function Timekeeper({
               selectedNames.length === 0 || 
               !checkInTime || 
               !checkOutTime || 
-              (selectedNames.length === 1 && !hasSignature)
+              (selectedNames.length === 1 && !hasSignature) ||
+              isSubmitting
             }
           >
             <CheckCircle2 size={18} />

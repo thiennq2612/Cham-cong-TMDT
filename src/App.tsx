@@ -108,6 +108,7 @@ export default function App() {
         {activeTab === 'timekeeper' ? (
           <Timekeeper
             collaborators={collaborators}
+            logs={logs}
             onCollaboratorAdded={handleCollaboratorAdded}
             onLogAdded={handleLogAdded}
           />
