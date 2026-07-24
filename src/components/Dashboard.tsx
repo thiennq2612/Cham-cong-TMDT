@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { deleteTimeLog, deleteCollaborator, addTimeLog } from '../services/db';
 import type { TimeLog, Collaborator } from '../services/db';
 import { Search, Download, Trash2, Calendar, FileSpreadsheet, X, Clock, DollarSign, Users } from 'lucide-react';
@@ -22,6 +22,11 @@ export default function Dashboard({
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   
+  // Searchable filter dropdown states
+  const [isFilterDropdownOpen, setIsFilterDropdownOpen] = useState(false);
+  const [filterSearchQuery, setFilterSearchQuery] = useState('');
+  const filterSelectRef = useRef<HTMLDivElement | null>(null);
+  
   // Collaborators search state
   const [collabSearch, setCollabSearch] = useState('');
 
@@ -41,6 +46,29 @@ export default function Dashboard({
     // Round to 2 decimal places
     return Math.round(hours * 100) / 100;
   };
+
+  // Sync filterSearchQuery with searchTerm
+  useEffect(() => {
+    setFilterSearchQuery(searchTerm || '');
+  }, [searchTerm]);
+
+  // Click outside to close filter dropdown
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (filterSelectRef.current && !filterSelectRef.current.contains(event.target as Node)) {
+        setIsFilterDropdownOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
+
+  // Filter collaborators list for dropdown selection
+  const filteredFilterCollabs = collaborators.filter((collab) =>
+    collab.name.toLowerCase().includes(filterSearchQuery.toLowerCase())
+  );
 
   // Filter logs based on search name and date range
   const filteredLogs = logs.filter((log) => {
@@ -232,19 +260,57 @@ export default function Dashboard({
           <Search size={16} /> Bộ lọc dữ liệu
         </h3>
         
-        <div className="form-group" style={{ marginBottom: 0 }}>
-          <select
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            style={{ width: '100%' }}
-          >
-            <option value="">-- Chọn CTV để lọc (Tất cả) --</option>
-            {collaborators.map((c) => (
-              <option key={c.id} value={c.name}>
-                {c.name}
-              </option>
-            ))}
-          </select>
+        <div className="form-group" style={{ marginBottom: 0 }} ref={filterSelectRef}>
+          <div className="searchable-select-container">
+            <div className="searchable-select-input-wrapper">
+              <input
+                type="text"
+                placeholder="Tìm kiếm hoặc chọn CTV để lọc..."
+                value={filterSearchQuery}
+                onChange={(e) => {
+                  setFilterSearchQuery(e.target.value);
+                  setIsFilterDropdownOpen(true);
+                  if (searchTerm && e.target.value !== searchTerm) {
+                    setSearchTerm('');
+                  }
+                }}
+                onFocus={() => setIsFilterDropdownOpen(true)}
+              />
+              <span className={`searchable-select-arrow ${isFilterDropdownOpen ? 'open' : ''}`}>▼</span>
+            </div>
+
+            {isFilterDropdownOpen && (
+              <div className="searchable-select-dropdown" style={{ zIndex: 600 }}>
+                <div
+                  className={`searchable-select-option ${!searchTerm ? 'selected' : ''}`}
+                  onClick={() => {
+                    setSearchTerm('');
+                    setFilterSearchQuery('');
+                    setIsFilterDropdownOpen(false);
+                  }}
+                >
+                  -- Xem tất cả CTV --
+                </div>
+                {filteredFilterCollabs.length === 0 ? (
+                  <div className="searchable-select-no-results">Không tìm thấy nhân sự</div>
+                ) : (
+                  filteredFilterCollabs.map((collab) => (
+                    <div
+                      key={collab.id}
+                      className={`searchable-select-option ${searchTerm === collab.name ? 'selected' : ''}`}
+                      onClick={() => {
+                        setSearchTerm(collab.name);
+                        setFilterSearchQuery(collab.name);
+                        setIsFilterDropdownOpen(false);
+                      }}
+                    >
+                      {collab.name}
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
+          </div>
         </div>
         
         <div className="date-filters">
