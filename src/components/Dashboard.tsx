@@ -18,9 +18,9 @@ export default function Dashboard({
   onCollaboratorDeleted
 }: DashboardProps) {
   // Search & filter states
+  const todayStr = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0];
   const [searchTerm, setSearchTerm] = useState('');
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
+  const [filterDate, setFilterDate] = useState(todayStr);
   
   // Searchable filter dropdown states
   const [isFilterDropdownOpen, setIsFilterDropdownOpen] = useState(false);
@@ -108,25 +108,19 @@ export default function Dashboard({
     collab.name.toLowerCase().includes(filterSearchQuery.toLowerCase())
   );
 
-  // Filter logs based on search name and date range
+  // Filter logs based on search name and selected date (defaults to today)
   const filteredLogs = logs.filter((log) => {
     const matchesSearch = log.name.toLowerCase().includes(searchTerm.toLowerCase());
-    
-    let matchesDate = true;
-    if (startDate) {
-      matchesDate = matchesDate && log.date >= startDate;
-    }
-    if (endDate) {
-      matchesDate = matchesDate && log.date <= endDate;
-    }
+    const activeFilterDate = filterDate || todayStr;
+    const matchesDate = log.date === activeFilterDate;
     
     return matchesSearch && matchesDate;
   });
 
-  // Calculate statistics
-  const totalHours = filteredLogs.reduce((acc, log) => acc + getDurationHours(log.checkInTime, log.checkOutTime), 0);
+  // Calculate statistics (including break deductions)
+  const totalHours = filteredLogs.reduce((acc, log) => acc + getDurationHours(log.checkInTime, log.checkOutTime, log.lunchBreak, log.afternoonBreak), 0);
   const totalCost = filteredLogs.reduce((acc, log) => {
-    const hrs = getDurationHours(log.checkInTime, log.checkOutTime);
+    const hrs = getDurationHours(log.checkInTime, log.checkOutTime, log.lunchBreak, log.afternoonBreak);
     return acc + (hrs * (log.hourlyRate ?? 42000));
   }, 0);
 
@@ -511,20 +505,13 @@ export default function Dashboard({
         </div>
         
         <div className="date-filters">
-          <div>
-            <label className="form-label" style={{fontSize: '0.65rem'}}>Từ ngày</label>
+          <div style={{ width: '100%' }}>
+            <label className="form-label" style={{ fontSize: '0.65rem' }}>Chọn ngày hiển thị</label>
             <input
               type="date"
-              value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
-            />
-          </div>
-          <div>
-            <label className="form-label" style={{fontSize: '0.65rem'}}>Đến ngày</label>
-            <input
-              type="date"
-              value={endDate}
-              onChange={(e) => setEndDate(e.target.value)}
+              value={filterDate}
+              onChange={(e) => setFilterDate(e.target.value)}
+              style={{ width: '100%' }}
             />
           </div>
         </div>
